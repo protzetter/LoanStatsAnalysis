@@ -1,0 +1,56 @@
+---
+title: "Loan data analysis"
+author: "Patrick Rotzetter"
+date: "1 Decembere 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, echo = FALSE,message=FALSE }
+library(C50)
+library(ggplot2)
+library(dplyr)
+library(factoextra)
+library(FactoMineR)
+library(kohonen)
+library(corrplot)
+library(randomForest)
+library(party)
+library(caret)
+library(pROC)
+library(stringr)
+library(tidyverse)
+```
+
+# Introduction
+
+We are doing to do data analysis of an open data set 
+
+# Data load
+
+## Load the data and clean the file
+The csv file is separated by comma and values are between quotes, on top we need to clean some non standard characters, this is a bit more complicated than usual
+
+```{r loadata}
+lines <- readLines("LoanStats_2017Q1 2.csv")
+lines <-str_replace_all(lines,"[^[:graph:]]", " ") 
+lines <- gsub('(^"|"$)', "", lines)
+lines <- gsub("\"","" ,lines)
+loans<-read.csv(textConnection(lines), sep=',',stringsAsFactors = FALSE)
+
+```
+
+# Remove some unwanted columns
+
+```{r remove}
+
+loans<-select(loans, -c(url,desc,purpose,title,
+                        sec_app_earliest_cr_line,
+                        sec_app_inq_last_6mths,
+                        sec_app_mths_since_last_major_derog.))
+
+
+```
