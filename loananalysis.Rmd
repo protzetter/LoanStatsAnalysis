@@ -43,10 +43,13 @@ loans<-read.csv(textConnection(lines), sep=',',stringsAsFactors = FALSE)
 
 ```
 
-# Remove some unwanted columns
+# Data Transformation
+
+## Remove some unwanted columns
+For now let us remove some columns we believe are not relevant.
 
 ```{r remove}
-
+loans<-select(loans, -c(id,member_id,emp_title, zip_code,addr_state))
 loans<-select(loans, -c(url,desc,purpose,title,
                         sec_app_earliest_cr_line,
                         sec_app_inq_last_6mths,
@@ -54,3 +57,47 @@ loans<-select(loans, -c(url,desc,purpose,title,
 
 
 ```
+
+## Convert percentage columns into numeric columns and remove the % sign
+```{r percentage}
+
+loans$int_rate<-as.numeric(gsub("[\\%]", "", loans$int_rate))
+loans$revol_util<-as.numeric(gsub("[\\%]", "", loans$revol_util))
+loans$total_acc<-as.numeric(gsub("[\\%]", "", loans$total_acc))
+```
+## get employment length and remove years to get cleaner data
+
+```{ employee}
+loans$emp_length<-gsub("[^0-9+<]","",loans$emp_length)
+loans$emp_length<-as.factor(loans$emp_length)
+```
+
+## identify numeric columns and convert them to numeric
+```{r convertnum}
+numCols=c("annual_inc","loan_amnt","funded_amnt", "out_prncp","out_prncp_inv","dti","delinq_2yrs",
+        "mths_since_last_delinq","mths_since_last_record","earliest_cr_line",
+        "inq_last_6mths","total_pymnt","last_pymnt_amnt", "annual_inc_joint","dti_joint","mths_since_last_major_derog")
+          
+for (col in numCols) {
+  loans[[col]]<-as.numeric(loans[[col]])
+}
+
+```
+
+## remove NA values from known columns so far and replace by 0
+## indentify numeric columns
+```{r missingnum}
+
+# remove NA values from known columns so far and replace by 0
+loans$num_accts_ever_120_pd[is.na(loans$num_accts_ever_120_pd)]<-0  
+loans$num_tl_120dpd_2m[is.na(loans$num_tl_120dpd_2m)]<-0  
+loans$num_tl_30dpd[is.na(loans$num_tl_30dpd)]<-0  
+loans$num_tl_90g_dpd_24m[is.na(loans$num_tl_90g_dpd_24m)]<-0 
+loans$num_tl_op_past_12m[is.na(loans$num_tl_op_past_12m)]<-0 
+loans$delinq_2yrs[is.na(loans$delinq_2yrs)]<-0 
+loans$mths_since_last_delinq[is.na(loans$mths_since_last_delinq)]<-0
+loans$mths_since_last_major_derog[is.na(loans$mths_since_last_major_derog)]<-0
+# figure out which columns are numeric so that we can look at the distribution
+numeric_cols <- sapply(loans, is.numeric)
+```
+
