@@ -1,7 +1,7 @@
 ---
 title: "Loan data analysis"
 author: "Patrick Rotzetter"
-date: "1 Decembere 2019"
+date: "December 2019"
 output: html_document
 ---
 
@@ -27,14 +27,14 @@ library(tidyverse)
 
 # Introduction
 
-We are doing to do data analysis of an open data set 
+We are doing to do data analysis of an open data set which includes the Lending Club loans information from Q2 2017 
 
 # Data load
 
-## Load the data and clean the file
+
 The csv file is separated by comma and values are between quotes, on top we need to clean some non standard characters, this is a bit more complicated than usual
 
-```{r loadata}
+```{r loadata, cache=TRUE}
 lines <- readLines("LoanStats_2017Q1 2.csv")
 lines <-str_replace_all(lines,"[^[:graph:]]", " ") 
 lines <- gsub('(^"|"$)', "", lines)
@@ -45,8 +45,7 @@ loans<-read.csv(textConnection(lines), sep=',',stringsAsFactors = FALSE)
 
 # Data Transformation
 
-## Remove some unwanted columns
-For now let us remove some columns we believe are not relevant.
+Let us remove some unwanted columns and let us remove some columns we believe are not relevant.
 
 ```{r remove}
 loans<-select(loans, -c(id,member_id,emp_title, zip_code,addr_state))
@@ -58,22 +57,23 @@ loans<-select(loans, -c(url,desc,purpose,title,
 
 ```
 
-## Convert percentage columns into numeric columns and remove the % sign
+Convert percentage columns into numeric columns and remove the % sign
+
 ```{r percentage}
 
 loans$int_rate<-as.numeric(gsub("[\\%]", "", loans$int_rate))
 loans$revol_util<-as.numeric(gsub("[\\%]", "", loans$revol_util))
 loans$total_acc<-as.numeric(gsub("[\\%]", "", loans$total_acc))
 ```
-## get employment length and remove years to get cleaner data
+Get employment length and remove years to get cleaner data
 
-```{ employee}
+```{r employee}
 loans$emp_length<-gsub("[^0-9+<]","",loans$emp_length)
 loans$emp_length<-as.factor(loans$emp_length)
 ```
 
-## identify numeric columns and convert them to numeric
-```{r convertnum}
+Identify numeric columns and convert them to numeric
+```{r convertnum, echo=FALSE, message=FALSE}
 numCols=c("annual_inc","loan_amnt","funded_amnt", "out_prncp","out_prncp_inv","dti","delinq_2yrs",
         "mths_since_last_delinq","mths_since_last_record","earliest_cr_line",
         "inq_last_6mths","total_pymnt","last_pymnt_amnt", "annual_inc_joint","dti_joint","mths_since_last_major_derog")
@@ -84,8 +84,8 @@ for (col in numCols) {
 
 ```
 
-## remove NA values from known columns so far and replace by 0
-## indentify numeric columns
+Remove NA values from known columns so far and replace by 0
+
 ```{r missingnum}
 
 # remove NA values from known columns so far and replace by 0
@@ -100,4 +100,129 @@ loans$mths_since_last_major_derog[is.na(loans$mths_since_last_major_derog)]<-0
 # figure out which columns are numeric so that we can look at the distribution
 numeric_cols <- sapply(loans, is.numeric)
 ```
+
+Identify bad loans and add a flag for bad loans
+
+```{r badloans}
+# 'bad' statuses
+bad_indicators <- c("Charged Off",
+                    "Default",
+                    "Does not meet the credit policy. Status:Charged Off",
+                    "In Grace Period", 
+                    "Default Receiver",
+                    "Late (16-30 days)",
+                    "Late (31-120 days)")
+
+# assign certain statuses to a 'bad' ('1') group
+loans$is_bad <- ifelse(loans$loan_status %in% bad_indicators, 1,0)
+loans$is_bad<-as.factor(loans$is_bad)
+loans<-select(loans,-loan_status)
+
+```
+## Missing values
+
+First we determine percentage  of NAs in each column, then remove columns where  NA values represent more than 80%
+
+```{r missingvalues}
+naPercentage <-sapply(loans, function(y) sum(length(which(is.na(y))))/length(y))
+hist(naPercentage[naPercentage>0], col = "blue", xlab = "Percentange of null values",
+     main = "Frequency of null values")
+
+# let us remove all columns with more than 80% NAs
+AllNA <- which(naPercentage>0.80)
+loans<-loans[,-AllNA]
+naPercentage <-sapply(loans, function(y) sum(length(which(is.na(y))))/length(y))
+hist(naPercentage[naPercentage>0], col = "blue", xlab = "Percentange of null values",
+     main = "Frequency of null values after removal")
+
+colnames(loans)[colSums(is.na(loans)) > 0]
+
+```
+
+Convert character columns to factors for later use
+
+```{r convfactor}
+loans <- mutate_if(loans, is.character, as.factor)
+```
+
+Let us look at few distributions, first by loan amount and second by installment amount
+```{r histog}
+
+hist(loans$loan_amnt,col = 'blue', xlab='Loan Amount', main = 'Distribution by loan amount')
+hist(loans$installment,col = 'blue', xlab='Installment Amount', main = 'Distribution by installment amount')
+
+
+```
+
+Let us look at interest rate by grade
+```{r intrate}
+
+plot(loans$int_rate~loans$grade, loans,col='blue',xlab = "Loan grade", ylab="Interest rate")
+
+```
+
+Without surprise, interest rates are higher for lower grades.
+
+Let us look at the number of loans by credit sub-grade
+
+```{r}
+fdc<- loans%>% group_by(sub_grade) %>% summarize(count=n())
+ggplot(fdc,aes(x=sub_grade,y=count))+geom_col(fill = "slateblue")+labs(x="Loan sub-grade", y="Count", title="Total number of loans by sub-grade")+theme(
+      panel.border = element_blank(),  
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.background = element_blank(),
+      axis.line = element_line(colour = "grey")
+    )
+
+```
+
+Let us look at the past due as function of loan grade averaged by number of loans
+
+```{r loangradeaverage}
+# let us look at the past due as function of loan grade averaged by number of loans
+fdc<- loans%>% group_by(sub_grade) %>% summarize(PDMean=sum(num_accts_ever_120_pd)/n()) %>% arrange(PDMean)
+ggplot(fdc, aes(x=sub_grade, y=PDMean))+geom_col()+geom_col(fill = "slateblue")+labs(x="Loan sub-grade", y="Past due more than 2 years",title="Percentage of past due by loan sub-grade")+theme(
+  panel.border = element_blank(),  
+  panel.grid.major = element_blank(),
+  panel.grid.minor = element_blank(),
+  panel.background = element_blank(),
+  axis.line = element_line(colour = "grey")
+)
+
+```
+
+Let us look at the deliquency in last 2 years  as function of loan grade averaged by number of loans
+
+```{r loandelinqaverage}
+
+fdc<- loans%>% group_by(sub_grade) %>% summarize(delinq=sum(delinq_2yrs)/n()) %>% arrange(delinq)
+ggplot(fdc, aes(x=sub_grade, y=delinq))+geom_col()+geom_col(fill = "slateblue")+labs(x="Loan sub-grade", y="Deliquency in past 2 years",title="Percentage of deliquency by loan sub-grade")+theme(
+  panel.border = element_blank(),  
+  panel.grid.major = element_blank(),
+  panel.grid.minor = element_blank(),
+  panel.background = element_blank(),
+  axis.line = element_line(colour = "grey")
+)
+
+```
+
+Let us look at bad loans in functgion of employment length
+```{r loanbyemplength}
+
+fdc<- loans%>% group_by(emp_length) %>% summarize(badloan=sum(as.numeric(is_bad)))                                 
+ggplot(fdc, aes(x=emp_length, y=badloan))+geom_col(fill = "slateblue")+labs(x="Length of employment", y="Bad loans",title="Number of bad loans by employment length")+
+  theme(
+  panel.border = element_blank(),  
+  panel.grid.major = element_blank(),
+  panel.grid.minor = element_blank(),
+  panel.background = element_blank(),
+  axis.line = element_line(colour = "grey"))
+
+
+```
+
+As we can see there is some unclean data that we will need to remove or correct
+
+
 
