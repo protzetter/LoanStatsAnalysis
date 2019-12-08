@@ -2,14 +2,21 @@
 title: "Loan data analysis"
 author: "Patrick Rotzetter"
 date: "December 2019"
-output: html_document
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: show
 ---
+
+![Loan Data Analysis](dsimage.jpg)
+
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r libraries, echo = FALSE,message=FALSE }
+```{r libraries, echo=FALSE, message=FALSE, warning=FALSE}
 library(C50)
 library(ggplot2)
 library(dplyr)
@@ -27,9 +34,10 @@ library(tidyverse)
 
 # Introduction
 
-We are doing to do data analysis of an open data set which includes the Lending Club loans information from Q2 2017 
+Objective of this analysis, is to explore the loan data set provided on Kaggle for Q1 2017 from the Lending Club. We will go through data cleaning and then explore potantial relationship between features and bad loans in order to find a way of predicting bad loans. Not only it is useful for avoiding bad loans, but also for services personalization. 
+The data can be found under https://data.world/lpetrocelli/lendingclub-loan-data-2017-q-1
 
-# Data load
+# Loading the data set
 
 
 The csv file is separated by comma and values are between quotes, on top we need to clean some non standard characters, this is a bit more complicated than usual
@@ -43,11 +51,14 @@ loans<-read.csv(textConnection(lines), sep=',',stringsAsFactors = FALSE)
 
 ```
 
-# Data Transformation
+# Transforming the data
 
-Let us remove some unwanted columns and let us remove some columns we believe are not relevant.
+### Unnecessary columns
+
+Let us remove some unwanted columns and let us remove some columns we believe are not relevant. For now we do not need IDs, zip codes and states.
 
 ```{r remove}
+removedColumns<-select(loans, c(id,member_id,emp_title, zip_code,addr_state))
 loans<-select(loans, -c(id,member_id,emp_title, zip_code,addr_state))
 loans<-select(loans, -c(url,desc,purpose,title,
                         sec_app_earliest_cr_line,
@@ -57,7 +68,9 @@ loans<-select(loans, -c(url,desc,purpose,title,
 
 ```
 
-Convert percentage columns into numeric columns and remove the % sign
+### Convert percentages columns
+
+Convert percentage columns into numeric columns and remove the % sign to get numeric values.
 
 ```{r percentage}
 
@@ -65,15 +78,20 @@ loans$int_rate<-as.numeric(gsub("[\\%]", "", loans$int_rate))
 loans$revol_util<-as.numeric(gsub("[\\%]", "", loans$revol_util))
 loans$total_acc<-as.numeric(gsub("[\\%]", "", loans$total_acc))
 ```
-Get employment length and remove years to get cleaner data
+
+### Clean employment length
+
+Get employment length and remove years to get cleaner data.
 
 ```{r employee}
 loans$emp_length<-gsub("[^0-9+<]","",loans$emp_length)
 loans$emp_length<-as.factor(loans$emp_length)
 ```
 
+### Identify numeric columns
+
 Identify numeric columns and convert them to numeric
-```{r convertnum, echo=FALSE, message=FALSE}
+```{r convertnum, message=FALSE, warning=FALSE}
 numCols=c("annual_inc","loan_amnt","funded_amnt", "out_prncp","out_prncp_inv","dti","delinq_2yrs",
         "mths_since_last_delinq","mths_since_last_record","earliest_cr_line",
         "inq_last_6mths","total_pymnt","last_pymnt_amnt", "annual_inc_joint","dti_joint","mths_since_last_major_derog")
@@ -84,7 +102,9 @@ for (col in numCols) {
 
 ```
 
-Remove NA values from known columns so far and replace by 0
+### Remove null values
+
+Remove NA values from known columns so far and replace by 0. Then identify numeric columns for further analysis.
 
 ```{r missingnum}
 
@@ -101,11 +121,14 @@ loans$mths_since_last_major_derog[is.na(loans$mths_since_last_major_derog)]<-0
 numeric_cols <- sapply(loans, is.numeric)
 ```
 
-Identify bad loans and add a flag for bad loans
+
+### Identify bad loans
+
+Identify bad loans and add a flag for bad loans based on the indicators found in loan_status column.
 
 ```{r badloans}
 # 'bad' statuses
-bad_indicators <- c("Charged Off",
+badIndicators <- c("Charged Off",
                     "Default",
                     "Does not meet the credit policy. Status:Charged Off",
                     "In Grace Period", 
@@ -114,30 +137,38 @@ bad_indicators <- c("Charged Off",
                     "Late (31-120 days)")
 
 # assign certain statuses to a 'bad' ('1') group
-loans$is_bad <- ifelse(loans$loan_status %in% bad_indicators, 1,0)
+loans$is_bad <- ifelse(loans$loan_status %in% badIndicators, 1,0)
 loans$is_bad<-as.factor(loans$is_bad)
 loans<-select(loans,-loan_status)
-
+ggplot(loans, aes(x=is_bad)) + geom_bar(fill = "slateblue")+labs(x="Bad loan flag", y="Count")
 ```
-## Missing values
+
+We have a very small percentage of bad loans, so the data set is highly imbalanced.
+
+### Missing values
 
 First we determine percentage  of NAs in each column, then remove columns where  NA values represent more than 80%
+For other columns we replace NA values with 0 for now
 
 ```{r missingvalues}
 naPercentage <-sapply(loans, function(y) sum(length(which(is.na(y))))/length(y))
-hist(naPercentage[naPercentage>0], col = "blue", xlab = "Percentange of null values",
+hist(naPercentage[naPercentage>0], col = "slateblue", xlab = "Percentage of null values",
      main = "Frequency of null values")
 
 # let us remove all columns with more than 80% NAs
 AllNA <- which(naPercentage>0.80)
 loans<-loans[,-AllNA]
 naPercentage <-sapply(loans, function(y) sum(length(which(is.na(y))))/length(y))
-hist(naPercentage[naPercentage>0], col = "blue", xlab = "Percentange of null values",
+hist(naPercentage[naPercentage>0], col = "slateblue", xlab = "Percentage of null values",
      main = "Frequency of null values after removal")
 
 colnames(loans)[colSums(is.na(loans)) > 0]
+loans[is.na(loans)] <- 0
 
 ```
+
+
+### Convert characters to factors
 
 Convert character columns to factors for later use
 
@@ -145,11 +176,12 @@ Convert character columns to factors for later use
 loans <- mutate_if(loans, is.character, as.factor)
 ```
 
+# Exploring the data 
 Let us look at few distributions, first by loan amount and second by installment amount
 ```{r histog}
 
-hist(loans$loan_amnt,col = 'blue', xlab='Loan Amount', main = 'Distribution by loan amount')
-hist(loans$installment,col = 'blue', xlab='Installment Amount', main = 'Distribution by installment amount')
+hist(loans$loan_amnt,col = 'slateblue', xlab='Loan Amount', main = 'Distribution by loan amount')
+hist(loans$installment,col = 'slateblue', xlab='Installment Amount', main = 'Distribution by installment amount')
 
 
 ```
@@ -157,7 +189,7 @@ hist(loans$installment,col = 'blue', xlab='Installment Amount', main = 'Distribu
 Let us look at interest rate by grade
 ```{r intrate}
 
-plot(loans$int_rate~loans$grade, loans,col='blue',xlab = "Loan grade", ylab="Interest rate")
+plot(loans$int_rate~loans$grade, loans,col='slateblue',xlab = "Loan grade", ylab="Interest rate")
 
 ```
 
@@ -207,10 +239,11 @@ ggplot(fdc, aes(x=sub_grade, y=delinq))+geom_col()+geom_col(fill = "slateblue")+
 
 ```
 
-Let us look at bad loans in functgion of employment length
+Let us look at bad loans in function of employment length
 ```{r loanbyemplength}
 
-fdc<- loans%>% group_by(emp_length) %>% summarize(badloan=sum(as.numeric(is_bad)))                                 
+fdc<- loans%>% group_by(emp_length) %>% summarize(badloan=sum(as.numeric(is_bad==1))/n())                                 
+                             
 ggplot(fdc, aes(x=emp_length, y=badloan))+geom_col(fill = "slateblue")+labs(x="Length of employment", y="Bad loans",title="Number of bad loans by employment length")+
   theme(
   panel.border = element_blank(),  
@@ -222,7 +255,166 @@ ggplot(fdc, aes(x=emp_length, y=badloan))+geom_col(fill = "slateblue")+labs(x="L
 
 ```
 
-As we can see there is some unclean data that we will need to remove or correct
+As we can see there is some unclean data that we will need to remove or correct, let us do that to eliminate noise
 
+Remove rows with employee length = 911 or 1954
+
+```{r removeemp}
+
+loans<-loans %>% filter(!emp_length=="911") 
+loans<-loans %>% filter(!emp_length=="1954") 
+
+```
+
+Interesting could be also to look at the number of bad loans as a relation to the annual income
+
+```{r annualinc}
+
+fdc<- loans%>% group_by(annual_inc) %>% summarize(badloan=sum(as.numeric(is_bad==1)))                                 
+ggplot(subset(fdc,badloan>0), aes(x=annual_inc, y=badloan))+geom_point(col = "slateblue")+labs(x="Annual income", y="Number of bad loans",title="Number of bad loans by annual income")+
+  theme(
+    panel.border = element_blank(),  
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "grey"))+
+    scale_x_continuous(labels = scales::comma)
+
+
+```
+
+# Further data exploration
+
+## Numeric columns
+
+Figure out which columns are numeric so that we can do some modeling with numeric features and get numeric only columns
+
+```{r splitnum}
+numericCols <- sapply(loans, is.numeric)
+nonumeric_cols<- sapply(loans, is.factor)
+
+loansnum<-loans[, numericCols]
+loansnonum<-loans[,nonumeric_cols]
+
+```
+
+## Removing correlated variables
+
+Correlated features do not add any significance in the data and do not convey extra information. Hence this can be recommended to remove them. Let us take a look
+
+```{r corrdrop}
+# correlations to drop
+
+indexesToDrop <- findCorrelation(cor(loansnum), cutoff = 0.8)
+corrplot(cor(loansnum[,indexesToDrop]),type = "upper",order="hclust",
+         col = cm.colors(100), tl.col = "black")
+loansnum<-loansnum[,-indexesToDrop]
+
+```
+
+We can take a cut off at 0.8 correlation and remove them. For example it is quite clear that loan installment is highly correlated with loan amount.
+
+## PCA ( Principal Component Analysis)
+
+Since we have 80 columns in the data set, let us see if we can reduce the dimension of the matrix through PCA
+
+```{r pca}
+loansnum[is.na(loansnum)] <- 0
+fullTrainMatrix<-as.matrix(as.data.frame(lapply(loansnum, as.numeric)))
+fullTrainMatrix<-scale(fullTrainMatrix)
+res.PCA<-PCA(fullTrainMatrix, scale.unit = TRUE, ncp = 5, graph = FALSE)
+fviz_eig(res.PCA, addlabels = TRUE, ylim = c(0, 50))
+
+
+```
+
+This looks difficult to identify few dimensions that will account for a large portion of the variance, hence PCA does not bring much in our case.
+
+
+## KMeans
+
+### Identifying ideal number of clusters for numeric columns
+
+Using the elbow method we can try to identify the ideal number of clusters if any.
+
+```{r kmeans, warning=FALSE}
+loansnum[is.na(loansnum)] <- 0
+fullTrainMatrix<-as.matrix(as.data.frame(lapply(loansnum, as.numeric)))
+fullTrainMatrix<-scale(fullTrainMatrix)
+# Initialize total within sum of squares error: wss
+wss <- 0
+gc()
+# For 1 to 15 cluster centers
+for (i in 1:10) {
+  km.out <- kmeans(fullTrainMatrix, centers = i, nstart=10)
+  # Save total within sum of squares to wss variable
+  wss[i] <- km.out$tot.withinss
+}
+
+# Plot total within sum of squares vs. number of clusters
+plot(1:10, wss, type = "b", 
+     xlab = "Number of Clusters", 
+     ylab = "Within groups sum of squares")
+
+```
+
+
+Let us try 3 clusters based on our previous calculation although it does not seem we have real clusters.
+
+```{r showclusters}
+cluster<-kmeans(fullTrainMatrix, centers=3, iter.max = 20)
+fviz_cluster(cluster, data = fullTrainMatrix,
+             #palette = c("#00AFBB","#2E9FDF", "#E7B800", "#FC4E07"),
+             ggtheme = theme_minimal(),
+             main = "Partitioning Clustering Plot")
+
+
+```
+
+As we can see there are no real clusters, the data is just split in 3 arbitrarily.
+
+## Random Forest
+
+With random forest let us identify the strongest predictors in the data set using the importance results. Let us start with training a random forest.
+
+```{r rfnum}
+# random forest
+loansnum$isBad<-loans$is_bad
+loansnum[ , "isBad"][is.na(loansnum[ , "isBad"])]<-0
+
+loansnonum$isBad<-loansnum$isBad
+set.seed(101)
+modelRF <- randomForest(isBad ~ ., data=loansnum, ntree=20, importance = TRUE)
+plot(modelRF$err.rate[, 1], type = "l", xlab = "Number of trees", ylab = "Prediction Error")
+
+```
+
+The prediction error is decreasing with the number of trees. This is a good sign that random forests can predict bad loans based on the data set.
+
+We can now check with varaiables are most important in the prediction. We are displaying only first 10 below.
+
+```{r rfimportance}
+important <- importance(modelRF, type=1 )
+Important_Features <- data.frame(Feature = row.names(important), Importance = important[, 1])
+Important_Features <-Important_Features[order(-Important_Features$Importance),]
+ggplot(Important_Features[1:10,], 
+                aes(x= reorder(Feature,
+                               Importance) , y = Importance) ) +
+  geom_bar(stat = "identity", 
+           fill = "slateblue") +
+  coord_flip() +
+  theme_light() +
+  xlab("") + 
+  ylab("Importance")+
+  ggtitle("Important Features in Random Forest\n")
+
+```
+
+In order of importance of predictive value, we get for the first 5:
+1.Ratio of total current balance to high credit/credit limit for all bankcard accounts.
+2. Annual income
+3. Late fees received to date
+4. Remaining outstanding principal for portion of total amount funded by investors
+5. The number of open credit lines in the borrower's credit file.
 
 

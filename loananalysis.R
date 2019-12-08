@@ -86,6 +86,8 @@ loans$is_bad <- ifelse(loans$loan_status %in% bad_indicators, 1,0)
 loans$is_bad<-as.factor(loans$is_bad)
 loans<-select(loans,-loan_status)
 
+ggplot(loans, aes(x=is_bad)) + geom_bar(fill = "slateblue")+labs(x="Bad loan flag", y="Count")
+
 
 
 # Let us look at missing values
@@ -116,8 +118,8 @@ loans <- mutate_if(loans, is.character, as.factor)
 # let us look at a few variables to understand the data better
 
 
-hist(loans$loan_amnt,col = 'blue', xlab='Loan Amount', main = 'Distribution by loan amount')
-hist(loans$installment,col = 'blue', xlab='Installment Amount', main = 'Distribution by installment amount')
+hist(loans$loan_amnt,col = 'staleblue', xlab='Loan Amount', main = 'Distribution by loan amount')
+hist(loans$installment,col = 'staleblue', xlab='Installment Amount', main = 'Distribution by installment amount')
 
 # let us look at interest rate by grade
 
@@ -154,8 +156,8 @@ ggplot(fdc, aes(x=sub_grade, y=delinq))+geom_col()+geom_col(fill = "slateblue")+
   axis.line = element_line(colour = "grey")
 )
 
-fdc<- loans%>% group_by(emp_length) %>% summarize(badloan=sum(as.numeric(is_bad)))                                 
-ggplot(fdc, aes(x=emp_length, y=badloan))+geom_col(fill = "slateblue")+labs(x="Length of employment", y="Bad loans",title="Number of bad loans by employmentlegth")+
+fdc<- loans%>% group_by(emp_length) %>% summarize(badloan=sum(as.numeric(is_bad==1))/n())                                 
+ggplot(fdc, aes(x=emp_length, y=badloan))+geom_col(fill = "slateblue")+labs(x="Length of employment", y="Bad loans",title="Number of bad loans by employment legth")+
   theme(
   panel.border = element_blank(),  
   panel.grid.major = element_blank(),
@@ -163,8 +165,23 @@ ggplot(fdc, aes(x=emp_length, y=badloan))+geom_col(fill = "slateblue")+labs(x="L
   panel.background = element_blank(),
   axis.line = element_line(colour = "grey"))
 
+# remove rows with employee length = 911 or 1954
 
-# Figure out which columns are numeric so that we can look at the distribution
+loans<-loans %>% filter(!emp_length=="911") 
+loans<-loans %>% filter(!emp_length=="1954") 
+
+fdc<- loans%>% group_by(annual_inc) %>% summarize(badloan=sum(as.numeric(is_bad==1)))                                 
+ggplot(subset(fdc,badloan>0), aes(x=annual_inc, y=badloan))+geom_point(col = "slateblue")+labs(x="Annual income", y="Number of bBad loans",title="Number of bad loans by annual income")+
+  theme(
+    panel.border = element_blank(),  
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "grey"))+
+    scale_x_continuous(labels = scales::comma)
+
+
+# Figure out which columns are numeric so that we can do some modeling with numeric features
 numericCols <- sapply(loans, is.numeric)
 nonumeric_cols<- sapply(loans, is.factor)
 #loans<-loans[rowSums(is.na(loans)) == 0,]
@@ -180,7 +197,9 @@ fullTrainMatrix<-scale(fullTrainMatrix)
 
 
 # pca analysis
-res.PCA<-PCA(fullTrainMatrix, scale.unit = TRUE, ncp = 5, graph = TRUE)
+res.PCA<-PCA(fullTrainMatrix, scale.unit = TRUE, ncp = 5, graph = FALSE)
+
+fviz_eig(res.PCA, addlabels = TRUE, ylim = c(0, 50))
 
 var <- get_pca_var(res.PCA)
 var
@@ -197,14 +216,14 @@ fviz_pca_var(res.PCA,
 wss <- 0
 
 # For 1 to 15 cluster centers
-for (i in 1:15) {
+for (i in 1:10) {
   km.out <- kmeans(fullTrainMatrix, centers = i, nstart=20)
   # Save total within sum of squares to wss variable
   wss[i] <- km.out$tot.withinss
 }
 
 # Plot total within sum of squares vs. number of clusters
-plot(1:15, wss, type = "b", 
+plot(1:10, wss, type = "b", 
      xlab = "Number of Clusters", 
      ylab = "Within groups sum of squares")
 
@@ -274,3 +293,30 @@ plot_ <- ggplot(Important_Features,
 ggsave("important_features.png", 
        plot_)
 plot_
+
+
+# correlations to drop
+
+indexesToDrop <- findCorrelation(cor(select(loansnum,-isBad)), cutoff = 0.8)
+corrplot(cor(select(loansnum,-isBad)[,indexesToDrop]))
+
+set.seed(101)
+modelRF <- randomForest(isBad ~ ., data=loansnum[,-indexesToDrop], ntree=20, importance = TRUE)
+important <- importance(modelRF, type=1 )
+Important_Features <- data.frame(Feature = row.names(important), Importance = important[, 1])
+Important_Features <-Important_Features[order(-Important_Features$Importance),]
+plot_ <- ggplot(Important_Features[1:10,], 
+                aes(x= reorder(Feature,
+                               Importance) , y = Importance) ) +
+  geom_bar(stat = "identity", 
+           fill = "#800080") +
+  coord_flip() +
+  theme_light(base_size = 20) +
+  xlab("") + 
+  ylab("Importance")+
+  ggtitle("Important Features in Random Forest\n") +
+  theme(plot.title = element_text(size=18))
+ggsave("important_features.png", 
+       plot_)
+plot_
+
