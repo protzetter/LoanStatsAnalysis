@@ -16,6 +16,7 @@ library(stringr)
 library(tidyverse)
 library(DescTools)
 
+
 # read csv file
 lines <- readLines("LoanStats_2017Q1 2.csv")
 lines <-str_replace_all(lines,"[^[:graph:]]", " ") 
@@ -26,7 +27,8 @@ loans<-read.csv(textConnection(lines), sep=',',stringsAsFactors = FALSE)
 # lines <- read_csv("LoanStats_2017Q1 2.csv",sep=',')
 # remove some unwanted columns like id, member_id, address, zip
 
-loans<-select(loans, -c(id,member_id,emp_title, zip_code,addr_state))
+
+loans<-select(loans, -c(id,member_id,emp_title))
 
 # remove some unwanted columns like url, desc
 
@@ -268,6 +270,12 @@ plot_
 loansnonum<-select(loansnonum,-c("verification_status","policy_code"))
 loansnonum<-select(loansnonum,-c("next_pymnt_d"))
 loansnonum<-select(loansnonum,-c("initial_list_status"))
+loansnonum<-select(loansnonum,-c("sec_app_mths_since_last_major_derog."))
+loansnonum<-select(loansnonum,-c("sec_app_inq_last_6mths"))
+loansnonum<-select(loansnonum,-c("sec_app_earliest_cr_line"))
+loansnonum$zip_code<-as.numeric(loansnonum$zip_code)
+loansnonum$addr_state<-as.numeric(loansnonum$addr_state)
+
 loansnonum<-select(loansnonum,-is_bad)
 loansnonum<-loansnonum[rowSums(is.na(loansnonum)) == 0,]
 modelRF <- randomForest(isBad ~ ., data=loansnonum, ntree=20, importance = TRUE)
@@ -319,4 +327,32 @@ plot_ <- ggplot(Important_Features[1:10,],
 ggsave("important_features.png", 
        plot_)
 plot_
+
+
+# xgboost
+library(caret)
+
+# train a xgbTree model using caret::train
+set.seed(1009)
+
+loanpred<-select(loansnonum,c("term", "emp_length","home_ownership", "zip_code","isBad"))
+loanpred$annual_income<-loansnum$annual_inc
+levels(loanpred$term)[1] = "missing"
+levels(loanpred$emp_length)[1] = "missing"
+levels(loanpred$home_ownership)[1] = "missing"
+levels(loanpred$home_ownership)[2] = "missing"
+
+model<-C5.0(isBad~., data=loanpred, trials = 2)
+predictions<-predict(model,select(loanpred,-isBad))
+confusionMatrix(predictions,loanpred$isBad)
+#fitControl <- trainControl(method = "cv", number = 10, search = "random",sampling="up",classProbs = TRUE,summaryFunction=twoClassSummary)
+fitControl <- trainControl(method = "cv", number = 10, search = "random")
+modelXGB <- train(isBad~., data = loanpred, method = "xgbTree", trControl = fitControl)
+# See model results
+print(modelXGB)
+
+#Look at the confusion matrix
+predictions<-predict(modelXGB,loansnum)
+confusionMatrix(predictions,loansnum$isBad,positive = '1')
+
 

@@ -1,5 +1,5 @@
 ---
-title: "Loan data analysis"
+title: "Loan data analysis Part I"
 author: "Patrick Rotzetter"
 date: "December 2019"
 output: 
@@ -59,7 +59,7 @@ Let us remove some unwanted columns and let us remove some columns we believe ar
 
 ```{r remove}
 removedColumns<-select(loans, c(id,member_id,emp_title, zip_code,addr_state))
-loans<-select(loans, -c(id,member_id,emp_title, zip_code,addr_state))
+loans<-select(loans, -c(id,member_id,emp_title))
 loans<-select(loans, -c(url,desc,purpose,title,
                         sec_app_earliest_cr_line,
                         sec_app_inq_last_6mths,
@@ -239,6 +239,8 @@ ggplot(fdc, aes(x=sub_grade, y=delinq))+geom_col()+geom_col(fill = "slateblue")+
 
 ```
 
+Surprisingly there is no relationship between the loan sub-grade and number of deliquencies.
+
 Let us look at bad loans in function of employment length
 ```{r loanbyemplength}
 
@@ -280,14 +282,15 @@ ggplot(subset(fdc,badloan>0), aes(x=annual_inc, y=badloan))+geom_point(col = "sl
     axis.line = element_line(colour = "grey"))+
     scale_x_continuous(labels = scales::comma)
 
-
 ```
+
+It seems we have more issues with income lower than 200k, but this is alos in relation to the number of loans in that segment, so no conclusion can be derived from this.
 
 # Further data exploration
 
 ## Numeric columns
 
-Figure out which columns are numeric so that we can do some modeling with numeric features and get numeric only columns
+Figure out which columns are numeric so that we can do some modeling with numeric features and get numeric only columns. At same time, we keep th enon numeric columns that we will chekc later on.
 
 ```{r splitnum}
 numericCols <- sapply(loans, is.numeric)
@@ -337,7 +340,7 @@ This looks difficult to identify few dimensions that will account for a large po
 
 Using the elbow method we can try to identify the ideal number of clusters if any.
 
-```{r kmeans, warning=FALSE}
+```{r kmeans, warning=FALSE, cache=TRUE}
 loansnum[is.na(loansnum)] <- 0
 fullTrainMatrix<-as.matrix(as.data.frame(lapply(loansnum, as.numeric)))
 fullTrainMatrix<-scale(fullTrainMatrix)
@@ -375,6 +378,10 @@ As we can see there are no real clusters, the data is just split in 3 arbitraril
 
 ## Random Forest
 
+Random forests allow us to find good predictors within a set of features. We will start with the numeric columns only.
+
+### Numeric columns
+
 With random forest let us identify the strongest predictors in the data set using the importance results. Let us start with training a random forest.
 
 ```{r rfnum}
@@ -393,7 +400,7 @@ The prediction error is decreasing with the number of trees. This is a good sign
 
 We can now check with varaiables are most important in the prediction. We are displaying only first 10 below.
 
-```{r rfimportance}
+```{r rfimportance, cache=TRUE}
 important <- importance(modelRF, type=1 )
 Important_Features <- data.frame(Feature = row.names(important), Importance = important[, 1])
 Important_Features <-Important_Features[order(-Important_Features$Importance),]
@@ -411,10 +418,51 @@ ggplot(Important_Features[1:10,],
 ```
 
 In order of importance of predictive value, we get for the first 5:
-1.Ratio of total current balance to high credit/credit limit for all bankcard accounts.
+1. Ratio of total current balance to high credit/credit limit for all bankcard accounts.
 2. Annual income
 3. Late fees received to date
 4. Remaining outstanding principal for portion of total amount funded by investors
 5. The number of open credit lines in the borrower's credit file.
+
+### Non numeric features
+
+Let us find also important features within non numeric variables using random forest again.
+
+```{r nnrfimportance}
+
+loansnonum<-select(loansnonum,-c("verification_status","policy_code"))
+loansnonum<-select(loansnonum,-c("next_pymnt_d"))
+loansnonum<-select(loansnonum,-c("initial_list_status"))
+loansnonum<-select(loansnonum,-c("last_pymnt_d"))
+loansnonum<-select(loansnonum,-c("issue_d"))
+loansnonum$zip_code<-as.numeric(loansnonum$zip_code)
+loansnonum$addr_state<-as.numeric(loansnonum$addr_state)
+
+loansnonum<-select(loansnonum,-is_bad)
+loansnonum<-loansnonum[rowSums(is.na(loansnonum)) == 0,]
+set.seed(101)
+modelRF <- randomForest(isBad ~ ., data=loansnonum, ntree=20, importance = TRUE)
+important <- importance(modelRF, type=1 )
+Important_Features <- data.frame(Feature = row.names(important), Importance = important[, 1])
+Important_Features <-Important_Features[order(-Important_Features$Importance),]
+ggplot(Important_Features, 
+                aes(x= reorder(Feature,
+                               Importance) , y = Importance) ) +
+  geom_bar(stat = "identity", 
+           fill = "slateblue") +
+  coord_flip() +
+  theme_light() +
+  xlab("") + 
+  ylab("Importance")+
+  ggtitle("Important Features in Random Forest\n")
+
+```
+
+
+## Conclusion
+
+As we can see most of the features incldue already the fact that the loan is past due or deliquent, so this is not helping us to detect in advance if a loan is going to default or not. Hence we need to identify features that are fully independent from the result. For example we can think of annual income, zip code. home ownership and so on. Let us try to build a predictive model based on these observations.
+
+
 
 
