@@ -125,9 +125,11 @@ ui <- fluidPage(
 
       # Show a plot of the generated distribution
       mainPanel(
+         h4('The graph below shows the distribution of the selected variable using the given number of bins'),
          withSpinner(plotOutput("distPlot"))
       )
-   )
+   ),
+   
 )
 
 # Define server logic required to draw a histogram
